@@ -1,0 +1,111 @@
+version: '3.9'
+
+services:
+  # ── PostgreSQL ─────────────────────────────────────────────────────────────
+  postgres:
+    image: postgres:16-alpine
+    container_name: Vodys-postgres
+    restart: unless-stopped
+    environment:
+      POSTGRES_USER: Vodys
+      POSTGRES_PASSWORD: Vodys
+      POSTGRES_DB: Vodys
+    ports:
+      - '5432:5432'
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+    healthcheck:
+      test: ['CMD-SHELL', 'pg_isready -U Vodys']
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+  # ── Redis ──────────────────────────────────────────────────────────────────
+  redis:
+    image: redis:7-alpine
+    container_name: Vodys-redis
+    restart: unless-stopped
+    command: redis-server --maxmemory 256mb --maxmemory-policy allkeys-lru
+    ports:
+      - '6379:6379'
+    volumes:
+      - redis_data:/data
+    healthcheck:
+      test: ['CMD', 'redis-cli', 'ping']
+      interval: 10s
+      timeout: 3s
+      retries: 5
+
+  # ── Backend ────────────────────────────────────────────────────────────────
+  backend:
+    build:
+      context: ./backend
+      dockerfile: Dockerfile
+      target: builder        # Use builder stage in dev for source maps
+    container_name: Vodys-backend
+    restart: unless-stopped
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+    environment:
+      NODE_ENV: development
+      PORT: 3001
+      DATABASE_URL: postgresql://Vodys:Vodys@postgres:5432/Vodys?schema=public
+      REDIS_URL: redis://redis:6379
+      JWT_SECRET: dev-jwt-secret-change-in-production-min32chars
+      JWT_REFRESH_SECRET: dev-refresh-secret-change-in-production-min32
+      JWT_EXPIRES_IN: 15m
+      JWT_REFRESH_EXPIRES_IN: 7d
+      CLIENT_URL: http://localhost:3000
+      ALLOWED_ORIGINS: http://localhost:3000
+      SMTP_HOST: mailhog
+      SMTP_PORT: 1025
+      SMTP_FROM: noreply@Vodys.dev
+      BCRYPT_ROUNDS: 10
+    ports:
+      - '3001:3001'
+    volumes:
+      - ./backend/src:/app/src
+      - ./backend/prisma:/app/prisma
+      - backend_uploads:/app/uploads
+      - backend_logs:/app/logs
+    command: >
+      sh -c "npx prisma migrate deploy &&
+             npx prisma db seed &&
+             npm run dev"
+
+  # ── Frontend ───────────────────────────────────────────────────────────────
+  frontend:
+    build:
+      context: ./frontend
+      dockerfile: Dockerfile
+    container_name: Vodys-frontend
+    restart: unless-stopped
+    depends_on:
+      - backend
+    environment:
+      NEXT_PUBLIC_API_URL: http://localhost:3001/api/v1
+      NEXT_PUBLIC_APP_URL: http://localhost:3000
+      NODE_ENV: development
+    ports:
+      - '3000:3000'
+    volumes:
+      - ./frontend/src:/app/src
+      - ./frontend/public:/app/public
+
+  # ── MailHog (dev email catcher) ────────────────────────────────────────────
+  mailhog:
+    image: mailhog/mailhog:latest
+    container_name: Vodys-mailhog
+    restart: unless-stopped
+    ports:
+      - '1025:1025'   # SMTP
+      - '8025:8025'   # Web UI
+
+volumes:
+  postgres_data:
+  redis_data:
+  backend_uploads:
+  backend_logs:

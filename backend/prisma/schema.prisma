@@ -1,0 +1,249 @@
+// Vodys - Prisma Schema
+// Versioned migrations, no raw SQL required
+
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+enum Role {
+  USER
+  ADMIN
+}
+
+enum Priority {
+  LOW
+  MEDIUM
+  HIGH
+  URGENT
+}
+
+enum TaskStatus {
+  TODO
+  IN_PROGRESS
+  DONE
+  CANCELLED
+}
+
+enum NotificationType {
+  TASK_DUE
+  TASK_ASSIGNED
+  POMODORO_COMPLETE
+  SYSTEM
+  REMINDER
+}
+
+model User {
+  id                String         @id @default(uuid())
+  email             String         @unique
+  username          String         @unique
+  passwordHash      String
+  firstName         String
+  lastName          String
+  avatarUrl         String?
+  role              Role           @default(USER)
+  isEmailVerified   Boolean        @default(false)
+  isActive          Boolean        @default(true)
+  timezone          String         @default("UTC")
+  weeklyGoalHours   Int            @default(20)
+  themePreference   String         @default("dark")
+  createdAt         DateTime       @default(now())
+  updatedAt         DateTime       @updatedAt
+
+  refreshTokens     RefreshToken[]
+  passwordResets    PasswordReset[]
+  subjects          Subject[]
+  tasks             Task[]
+  events            Event[]
+  pomodoroSessions  PomodoroSession[]
+  notifications     Notification[]
+  studySessions     StudySession[]
+
+  @@map("users")
+}
+
+model RefreshToken {
+  id          String   @id @default(uuid())
+  token       String   @unique
+  userId      String
+  expiresAt   DateTime
+  createdAt   DateTime @default(now())
+  revokedAt   DateTime?
+  userAgent   String?
+  ipAddress   String?
+
+  user        User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([userId])
+  @@index([token])
+  @@map("refresh_tokens")
+}
+
+model PasswordReset {
+  id        String   @id @default(uuid())
+  token     String   @unique
+  userId    String
+  expiresAt DateTime
+  usedAt    DateTime?
+  createdAt DateTime @default(now())
+
+  user      User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([token])
+  @@map("password_resets")
+}
+
+model Subject {
+  id          String   @id @default(uuid())
+  name        String
+  description String?
+  color       String   @default("#6366f1")
+  icon        String   @default("book")
+  userId      String
+  isArchived  Boolean  @default(false)
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+
+  user        User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  tasks       Task[]
+  events      Event[]
+  studySessions StudySession[]
+
+  @@index([userId])
+  @@map("subjects")
+}
+
+model Task {
+  id           String      @id @default(uuid())
+  title        String
+  description  String?
+  status       TaskStatus  @default(TODO)
+  priority     Priority    @default(MEDIUM)
+  dueDate      DateTime?
+  completedAt  DateTime?
+  estimatedMin Int?
+  actualMin    Int?
+  userId       String
+  subjectId    String?
+  parentId     String?
+  position     Int         @default(0)
+  createdAt    DateTime    @default(now())
+  updatedAt    DateTime    @updatedAt
+
+  user         User        @relation(fields: [userId], references: [id], onDelete: Cascade)
+  subject      Subject?    @relation(fields: [subjectId], references: [id], onDelete: SetNull)
+  parent       Task?       @relation("SubTasks", fields: [parentId], references: [id])
+  subtasks     Task[]      @relation("SubTasks")
+  tags         TaskTag[]
+
+  @@index([userId])
+  @@index([subjectId])
+  @@index([status])
+  @@index([dueDate])
+  @@map("tasks")
+}
+
+model Tag {
+  id        String    @id @default(uuid())
+  name      String
+  color     String    @default("#6366f1")
+  userId    String
+  createdAt DateTime  @default(now())
+
+  tasks     TaskTag[]
+
+  @@unique([name, userId])
+  @@index([userId])
+  @@map("tags")
+}
+
+model TaskTag {
+  taskId String
+  tagId  String
+
+  task   Task   @relation(fields: [taskId], references: [id], onDelete: Cascade)
+  tag    Tag    @relation(fields: [tagId], references: [id], onDelete: Cascade)
+
+  @@id([taskId, tagId])
+  @@map("task_tags")
+}
+
+model Event {
+  id          String   @id @default(uuid())
+  title       String
+  description String?
+  startAt     DateTime
+  endAt       DateTime
+  allDay      Boolean  @default(false)
+  color       String   @default("#6366f1")
+  userId      String
+  subjectId   String?
+  recurrence  String?
+  location    String?
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+
+  user        User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  subject     Subject? @relation(fields: [subjectId], references: [id], onDelete: SetNull)
+
+  @@index([userId])
+  @@index([startAt])
+  @@map("events")
+}
+
+model PomodoroSession {
+  id           String    @id @default(uuid())
+  userId       String
+  taskId       String?
+  durationMin  Int       @default(25)
+  breakMin     Int       @default(5)
+  completedAt  DateTime?
+  cancelledAt  DateTime?
+  type         String    @default("work") // work | short_break | long_break
+  createdAt    DateTime  @default(now())
+
+  user         User      @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([userId])
+  @@index([createdAt])
+  @@map("pomodoro_sessions")
+}
+
+model StudySession {
+  id         String   @id @default(uuid())
+  userId     String
+  subjectId  String?
+  startAt    DateTime
+  endAt      DateTime?
+  durationMin Int?
+  notes      String?
+  createdAt  DateTime @default(now())
+
+  user       User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  subject    Subject? @relation(fields: [subjectId], references: [id], onDelete: SetNull)
+
+  @@index([userId])
+  @@map("study_sessions")
+}
+
+model Notification {
+  id        String           @id @default(uuid())
+  userId    String
+  type      NotificationType
+  title     String
+  body      String
+  data      Json?
+  isRead    Boolean          @default(false)
+  readAt    DateTime?
+  createdAt DateTime         @default(now())
+
+  user      User             @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([userId])
+  @@index([isRead])
+  @@map("notifications")
+}
