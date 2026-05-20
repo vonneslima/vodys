@@ -8,7 +8,7 @@ import type { Request } from 'express';
 export const taskService = {
   async findAll(userId: string, query: TaskQuery) {
     const { page, limit, skip } = parsePagination(
-      { query } as Request,
+      { query } as unknown as Request,
       { page: query.page, limit: query.limit }
     );
 

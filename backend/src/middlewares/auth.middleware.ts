@@ -28,7 +28,7 @@ export const authenticate = async (
 
   req.user = {
     id: payload.sub,
-    username: payload.username,
+    username: payload.username ?? '',
     role: payload.role as import('@prisma/client').Role,
   };
 
@@ -49,7 +49,7 @@ export const optionalAuthenticate = async (
     const payload = verifyAccessToken(token);
     req.user = {
       id: payload.sub,
-      username: payload.username,
+      username: payload.username ?? '',
       role: payload.role as import('@prisma/client').Role,
     };
   } catch {
