@@ -24,18 +24,21 @@ export const eventService = {
         where: { id: input.subjectId },
         select: { userId: true },
       });
+
       if (!subject || subject.userId !== userId) {
         throw new ForbiddenError('Subject not found or access denied');
       }
     }
 
+    const safeInput: any = {
+      ...input,
+      userId,
+      startAt: new Date(input.startAt),
+      endAt: new Date(input.endAt),
+    };
+
     return prisma.event.create({
-      data: {
-        ...input,
-        userId,
-        startAt: new Date(input.startAt),
-        endAt: new Date(input.endAt),
-      },
+      data: safeInput,
       include: {
         subject: { select: { id: true, name: true, color: true } },
       },
@@ -57,7 +60,7 @@ export const eventService = {
         ...input,
         startAt: input.startAt ? new Date(input.startAt) : undefined,
         endAt: input.endAt ? new Date(input.endAt) : undefined,
-      },
+      } as any,
       include: {
         subject: { select: { id: true, name: true, color: true } },
       },
@@ -73,6 +76,8 @@ export const eventService = {
     if (!event) throw new NotFoundError('Event');
     if (event.userId !== userId) throw new ForbiddenError();
 
-    await prisma.event.delete({ where: { id } });
+    await prisma.event.delete({
+      where: { id },
+    });
   },
 };

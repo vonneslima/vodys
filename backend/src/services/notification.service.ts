@@ -34,11 +34,14 @@ export const notificationService = {
       where: { userId, isRead: false },
       data: { isRead: true, readAt: new Date() },
     });
+
     return { count: result.count };
   },
 
   async getUnreadCount(userId: string): Promise<number> {
-    return prisma.notification.count({ where: { userId, isRead: false } });
+    return prisma.notification.count({
+      where: { userId, isRead: false },
+    });
   },
 
   async create(
@@ -49,7 +52,13 @@ export const notificationService = {
     data?: Record<string, unknown>
   ) {
     return prisma.notification.create({
-      data: { userId, type, title, body, data },
+      data: {
+        userId,
+        type,
+        title,
+        body,
+        data: data as any,
+      },
     });
   },
 
@@ -62,6 +71,8 @@ export const notificationService = {
     if (!notification) throw new NotFoundError('Notification');
     if (notification.userId !== userId) throw new ForbiddenError();
 
-    await prisma.notification.delete({ where: { id } });
+    await prisma.notification.delete({
+      where: { id },
+    });
   },
 };

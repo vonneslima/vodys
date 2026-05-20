@@ -26,7 +26,7 @@ if (process.env.NODE_ENV !== 'production') {
 
 // Log slow queries in development
 if (process.env.NODE_ENV === 'development') {
-  prisma.$on('query', (e) => {
+  prisma.$on('query' as never, (e: any) => {
     if (e.duration > 100) {
       logger.warn(`Slow query (${e.duration}ms): ${e.query}`);
     }

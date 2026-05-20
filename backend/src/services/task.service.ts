@@ -14,23 +14,11 @@ export const taskService = {
 
     const where: Prisma.TaskWhereInput = {
       userId,
-      parentId: query.includeSubtasks ? undefined : null, // root tasks only by default
+      parentId: query.includeSubtasks ? undefined : null,
       ...(query.status && { status: query.status }),
       ...(query.priority && { priority: query.priority }),
       ...(query.subjectId && { subjectId: query.subjectId }),
       ...(query.tagId && { tags: { some: { tagId: query.tagId } } }),
-      ...(query.search && {
-        OR: [
-          { title: { contains: query.search, mode: 'insensitive' } },
-          { description: { contains: query.search, mode: 'insensitive' } },
-        ],
-      }),
-      ...(query.dueBefore && { dueDate: { lte: new Date(query.dueBefore) } }),
-      ...(query.dueAfter && { dueDate: { gte: new Date(query.dueAfter) } }),
-    };
-
-    const orderBy: Prisma.TaskOrderByWithRelationInput = {
-      [query.sortBy]: query.sortOrder,
     };
 
     const [tasks, total] = await Promise.all([
@@ -38,14 +26,11 @@ export const taskService = {
         where,
         skip,
         take: limit,
-        orderBy,
+        orderBy: { createdAt: 'desc' },
         include: {
           subject: { select: { id: true, name: true, color: true, icon: true } },
           tags: { include: { tag: true } },
-          subtasks: {
-            select: { id: true, title: true, status: true },
-            orderBy: { position: 'asc' },
-          },
+          subtasks: true,
           _count: { select: { subtasks: true } },
         },
       }),
@@ -64,11 +49,7 @@ export const taskService = {
       include: {
         subject: { select: { id: true, name: true, color: true, icon: true } },
         tags: { include: { tag: true } },
-        subtasks: {
-          include: { tags: { include: { tag: true } } },
-          orderBy: { position: 'asc' },
-        },
-        parent: { select: { id: true, title: true } },
+        subtasks: true,
         _count: { select: { subtasks: true } },
       },
     });
@@ -80,28 +61,6 @@ export const taskService = {
   },
 
   async create(userId: string, input: CreateTaskInput) {
-    // Verify subject ownership
-    if (input.subjectId) {
-      const subject = await prisma.subject.findUnique({
-        where: { id: input.subjectId },
-        select: { userId: true },
-      });
-      if (!subject || subject.userId !== userId) {
-        throw new ForbiddenError('Subject not found or access denied');
-      }
-    }
-
-    // Verify parent task ownership
-    if (input.parentId) {
-      const parent = await prisma.task.findUnique({
-        where: { id: input.parentId },
-        select: { userId: true },
-      });
-      if (!parent || parent.userId !== userId) {
-        throw new ForbiddenError('Parent task not found or access denied');
-      }
-    }
-
     const { tagIds, ...rest } = input;
 
     const task = await prisma.task.create({
@@ -109,10 +68,10 @@ export const taskService = {
         ...rest,
         userId,
         dueDate: rest.dueDate ? new Date(rest.dueDate) : undefined,
-        tags: tagIds.length
+        tags: tagIds?.length
           ? { create: tagIds.map((tagId) => ({ tagId })) }
           : undefined,
-      },
+      } as any,
       include: {
         subject: { select: { id: true, name: true, color: true, icon: true } },
         tags: { include: { tag: true } },
@@ -139,31 +98,71 @@ export const taskService = {
       data: {
         ...rest,
         dueDate: rest.dueDate ? new Date(rest.dueDate) : rest.dueDate,
-        completedAt:
-          rest.status === TaskStatus.DONE && task.status !== TaskStatus.DONE
-            ? new Date()
-            : rest.status !== TaskStatus.DONE
-            ? null
-            : undefined,
-        ...(tagIds !== undefined && {
+        ...(tagIds && {
           tags: {
             deleteMany: {},
             create: tagIds.map((tagId) => ({ tagId })),
           },
         }),
-      },
+      } as any,
       include: {
         subject: { select: { id: true, name: true, color: true, icon: true } },
         tags: { include: { tag: true } },
-        subtasks: {
-          select: { id: true, title: true, status: true },
-          orderBy: { position: 'asc' },
-        },
+        subtasks: true,
         _count: { select: { subtasks: true } },
       },
     });
 
     return normalizeTask(updated);
+  },
+
+  async getUserStats(userId: string) {
+    const now = new Date();
+    const startOfWeek = new Date(now);
+
+    startOfWeek.setDate(now.getDate() - now.getDay());
+    startOfWeek.setHours(0, 0, 0, 0);
+
+    const [tasksByStatus, overdueCount, completedThisWeek] =
+      await Promise.all([
+        prisma.task.groupBy({
+          by: ['status'],
+          where: { userId },
+          _count: true,
+        }),
+        prisma.task.count({
+          where: {
+            userId,
+            status: {
+              notIn: [TaskStatus.DONE, TaskStatus.CANCELLED],
+            },
+            dueDate: { lt: now },
+          },
+        }),
+        prisma.task.count({
+          where: {
+            userId,
+            status: TaskStatus.DONE,
+            completedAt: {
+              gte: startOfWeek,
+            },
+          },
+        }),
+      ]);
+
+    const statusMap = Object.fromEntries(
+      tasksByStatus.map((s) => [s.status, s._count])
+    );
+
+    return {
+      total: Object.values(statusMap).reduce(
+        (a, b) => Number(a) + Number(b),
+        0
+      ),
+      byStatus: statusMap,
+      overdueCount,
+      completedThisWeek,
+    };
   },
 
   async delete(id: string, userId: string): Promise<void> {
@@ -175,66 +174,11 @@ export const taskService = {
     if (!task) throw new NotFoundError('Task');
     if (task.userId !== userId) throw new ForbiddenError();
 
-    // Cascade delete subtasks via Prisma self-relation
     await prisma.task.delete({ where: { id } });
-  },
-
-  async getUserStats(userId: string) {
-    const now = new Date();
-    const startOfWeek = new Date(now);
-    startOfWeek.setDate(now.getDate() - now.getDay());
-    startOfWeek.setHours(0, 0, 0, 0);
-
-    const [tasksByStatus, overdueCount, completedThisWeek, upcomingTasks] = await Promise.all([
-      prisma.task.groupBy({
-        by: ['status'],
-        where: { userId },
-        _count: true,
-      }),
-      prisma.task.count({
-        where: {
-          userId,
-          status: { notIn: [TaskStatus.DONE, TaskStatus.CANCELLED] },
-          dueDate: { lt: now },
-        },
-      }),
-      prisma.task.count({
-        where: {
-          userId,
-          status: TaskStatus.DONE,
-          completedAt: { gte: startOfWeek },
-        },
-      }),
-      prisma.task.findMany({
-        where: {
-          userId,
-          status: { notIn: [TaskStatus.DONE, TaskStatus.CANCELLED] },
-          dueDate: { gte: now },
-        },
-        orderBy: { dueDate: 'asc' },
-        take: 5,
-        include: {
-          subject: { select: { name: true, color: true } },
-        },
-      }),
-    ]);
-
-    const statusMap = Object.fromEntries(
-      tasksByStatus.map((s) => [s.status, s._count])
-    );
-
-    return {
-      total: Object.values(statusMap).reduce((a, b) => a + b, 0),
-      byStatus: statusMap,
-      overdueCount,
-      completedThisWeek,
-      upcomingTasks: upcomingTasks.map(normalizeTask),
-    };
   },
 };
 
-// eslint-disable-next-line @typescript-eslint/no-explicit-any
 const normalizeTask = (task: any) => ({
   ...task,
-  tags: task.tags?.map((t: { tag: unknown }) => t.tag) ?? [],
+  tags: task.tags?.map((t: any) => t.tag) ?? [],
 });

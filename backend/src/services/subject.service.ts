@@ -22,7 +22,7 @@ export const subjectService = {
       orderBy: [{ isArchived: 'asc' }, { name: 'asc' }],
     });
 
-    await cache.set(CACHE_KEYS.userSubjects(userId), subjects, 300); // 5 min cache
+    await cache.set(CACHE_KEYS.userSubjects(userId), subjects, 300);
     return subjects;
   },
 
@@ -48,7 +48,7 @@ export const subjectService = {
 
   async create(userId: string, input: CreateSubjectInput) {
     const subject = await prisma.subject.create({
-      data: { ...input, userId },
+      data: { ...input, userId } as any,
       include: { _count: { select: { tasks: true } } },
     });
 
@@ -67,7 +67,7 @@ export const subjectService = {
 
     const updated = await prisma.subject.update({
       where: { id },
-      data: input,
+      data: input as any,
       include: { _count: { select: { tasks: true } } },
     });
 
