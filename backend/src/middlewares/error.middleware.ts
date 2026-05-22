@@ -64,13 +64,13 @@ export const errorMiddleware = (
     }
   }
 
-  if (err instanceof Prisma.PrismaClientValidationError) {
-    res.status(422).json({
-      success: false,
-      message: 'Invalid data provided',
-    });
-    return;
-  }
+ if (err instanceof Prisma.PrismaClientValidationError) {
+  res.status(422).json({
+    success: false,
+    message: err.message,
+  });
+  return;
+}
 
   // CORS errors
   if (err.message.startsWith('CORS:')) {
