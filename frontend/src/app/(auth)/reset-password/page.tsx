@@ -35,7 +35,10 @@ export default function ResetPasswordPage() {
   const [success, setSuccess] = useState(false);
 
   const forgotForm = useForm({ resolver: zodResolver(forgotSchema) });
-  const resetForm = useForm<{ password: string }>({
+  const resetForm = useForm<{
+  password: string;
+  confirmPassword: string;
+}>({
   resolver: zodResolver(resetSchema),
 });
 
