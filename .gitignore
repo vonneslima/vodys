@@ -39,7 +39,7 @@ backend/uploads/*
 !backend/uploads/.gitkeep
 
 # Prisma
-backend/prisma/migrations/
+
 
 # Docker volumes (local)
 postgres_data/
