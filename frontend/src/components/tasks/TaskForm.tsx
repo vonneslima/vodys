@@ -66,7 +66,7 @@ export function TaskForm({ open, onClose, onSubmit, task, isLoading }: TaskFormP
         status: task.status,
         dueDate: task.dueDate ? task.dueDate.slice(0, 16) : '',
         estimatedMin: task.estimatedMin ?? '',
-        subjectId: task.subjectId ?? '',
+        subjectId: task.subject?.id ?? '',
       } as FormValues);
     } else {
       reset({ priority: 'MEDIUM', status: 'TODO' });
